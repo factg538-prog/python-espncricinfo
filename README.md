@@ -1,118 +1,130 @@
-# python-espncricinfo
+# Sports Adda67 — Live Cricket Overlay
 
-A Python 3 client for ESPNCricinfo's match, summary and player information.
+A **Railway-deployable** live cricket score overlay that auto-polls ESPN Cricinfo every 20 seconds and serves a broadcast-quality HTML overlay that updates every 2.5 seconds.
 
-### Description
+## Features
 
-A Python 3 client for ESPNCricinfo match, series and player data. The library uses Playwright (WebKit) to fetch match pages and extract embedded JSON, bypassing Akamai CDN restrictions on the legacy engine API endpoints. Both a `match_id` and `series_id` are required to instantiate a `Match` — both can be obtained from `Match.get_recent_matches()`. See the Usage section for instructions, and see `match.py` for individual functions.
+- 🏏 **Auto-detects live matches** from ESPN Cricinfo
+- 📸 **Player photos** pulled automatically from ESPN CDN
+- 🏴 **Team logos** from ESPN CDN
+- ⚡ **Real-time data**: scores, overs, CRR, RRR, target, partnership
+- 🎯 **Bowler stats**: figures, economy, wides, maidens
+- 🏏 **Batsman stats**: runs, balls, 4s, 6s, SR, minutes on crease
+- ⚾ **This over balls**: animated ball-by-ball display
+- 📋 **Playing XI**: full squad with photos and roles
+- 📍 **Venue + Toss + Format** info strip
+- 🎬 **SIX / FOUR / WICKET** celebration animations
+- ✏️ **Manual override** panel for when API is slow
+- 🔄 **Hot-swap match** via Admin panel or URL
 
-Disclaimer: This library is not intended for commercial use and neither it nor its creator has any affiliation with ESPNCricInfo. The [LICENSE](LICENSE.txt) for this library applies only to the code, not to the data.
+---
 
-The current version of this library is 1.0.0. It is very much a work in progress, and bug reports and feature requests are welcomed.
+## Deploy on Railway
 
-### Installation
-
-```shell
-uv add python-espncricinfo
+### Step 1 — Push to GitHub
+```bash
+git init
+git add .
+git commit -m "Sports Adda67 overlay"
+git remote add origin https://github.com/YOUR_USER/cricket-overlay.git
+git push -u origin main
 ```
 
-Or with pip:
+### Step 2 — Create Railway Project
+1. Go to [railway.app](https://railway.app)
+2. Click **New Project → Deploy from GitHub repo**
+3. Select your repo
 
-```shell
-pip install python-espncricinfo
+### Step 3 — Set Environment Variables (optional)
+In Railway dashboard → **Variables**:
+
+| Variable | Description | Default |
+|---|---|---|
+| `MATCH_ID` | ESPN match objectId (leave 0 to auto-detect live) | `0` |
+| `SERIES_ID` | ESPN series objectId | `0` |
+| `POLL_SEC` | How often to poll ESPN (seconds) | `20` |
+
+> If `MATCH_ID=0`, the server auto-picks the first currently live match.
+
+### Step 4 — Done!
+Your overlay will be live at `https://your-app.railway.app`
+
+---
+
+## Usage in OBS / Streamlabs
+
+1. Add a **Browser Source**
+2. Set URL to your Railway URL
+3. Set Width: **1280**, Height: **720**
+4. Enable "Shutdown source when not visible" for performance
+
+---
+
+## Admin Panel
+
+Press **Ctrl+S** or click the ⚙️ button (bottom right) to open the Admin Panel.
+
+### Admin Features:
+- **📡 Browse Live Matches** — auto-fetches live ESPN matches, click to switch
+- **Set Match** — enter Match ID + Series ID manually
+- **🔄 Force Refresh** — immediately re-poll ESPN
+- **Flag Images** — upload custom team flags/logos
+- **Manual Override** — override any field if ESPN data is stale
+- **Test Animations** — trigger SIX/FOUR/WICKET effects
+
+### Find Match IDs:
+Visit any ESPN Cricinfo match page URL:
+```
+https://www.espncricinfo.com/series/series-name-SERIESID/team-vs-team-MATCHID/live-cricket-score
+```
+Extract the numbers at the end.
+
+---
+
+## API Endpoints
+
+| Endpoint | Description |
+|---|---|
+| `GET /` | Serve the overlay HTML |
+| `GET /data.json` | Current match data as JSON |
+| `GET /live-matches` | List of currently live ESPN matches |
+| `GET /set-match?match_id=X&series_id=Y` | Switch to a different match |
+| `GET /force-refresh` | Trigger immediate ESPN poll |
+
+---
+
+## Local Development
+
+```bash
+pip install -r requirements.txt
+python server.py
+# Open http://localhost:8080
 ```
 
-After installation, install the Playwright WebKit browser (required for fetching match data):
+---
 
-```shell
-uv run playwright install webkit
+## Data Structure (`data.json`)
+
+```json
+{
+  "team1": {"name": "IND", "full_name": "India", "score": "205-4", "overs": "18.2", "flag_img": "...", "playing11": [...]},
+  "team2": {"name": "PAK", "full_name": "Pakistan", "score": "---", "flag_img": "...", "playing11": [...]},
+  "crr": "11.18", "rrr": "9.50",
+  "target": "220", "partnership": "68(42)",
+  "last_wicket": "Rohit b Shaheen 45(28)",
+  "match_status": "India need 15 off 10 balls",
+  "need": "Need 15 off 10 balls",
+  "venue": {"name": "Wankhede Stadium", "city": "Mumbai"},
+  "toss": "India won toss, chose to bat",
+  "match_format": "T20I",
+  "innings_num": 2,
+  "last_over_balls": ["1","0","6","4","W","2"],
+  "current_over": 18,
+  "current_ball": "2",
+  "last_updated": "14:32:11 UTC",
+  "yet_to_bat": "Pant, Hardik, Bumrah",
+  "batsman1": {"name": "Kohli", "runs": 78, "balls": 52, "fours": 6, "sixes": 4, "sr": "150.00", "on_strike": true, "photo": "...", "minutes": 58},
+  "batsman2": {"name": "Jadeja", "runs": 32, "balls": 20, "fours": 2, "sixes": 2, "sr": "160.00", "on_strike": false, "photo": "..."},
+  "bowler": {"name": "Shaheen", "wickets": 2, "runs": 38, "overs": "3.2", "maidens": 0, "economy": "11.45", "wides": 3, "photo": "..."}
+}
 ```
-
-### Usage
-
-For a summary of live matches, create an instance of the `Summary` class:
-
-```python
->>> from espncricinfo.summary import Summary
->>> s = Summary()
->>> s.matches
-[MatchRef(series_id=1478874, match_id=1478914), ...]
->>> for ref in s.matches:
-...     m = ref.to_match()
-...     print(m.description)
-
-# Tuple unpacking also works:
->>> for series_id, match_id in s.matches:
-...     print(series_id, match_id)
-```
-
-For individual matches, pass in both the match ID and series ID. These can be discovered from `get_recent_matches()`, or read from a match page URL (the two numeric IDs in the URL path):
-
-```python
->>> from espncricinfo.match import Match
->>> from espncricinfo.match_ref import MatchRef
->>> # Get recent matches as MatchRef objects
->>> Match.get_recent_matches(date="2026-02-06")
-[MatchRef(series_id=1478874, match_id=1478914), ...]
->>> # Construct a match directly
->>> m = Match(1478914, 1478874)
->>> m.description
-'IND Women v AUS Women'
->>> m.match_class
-'WT20I'
->>> m.result
-'IND Women won by 17 runs'
-```
-
-A full list of methods available to an instance of the `Match` class is in [the code](https://github.com/dwillis/python-espncricinfo/blob/master/espncricinfo/match.py).
-
-For player details, pass in the player ID (found in a player's URL - for example, [Ajinkya Rahane](http://www.espncricinfo.com/west-indies-v-india-2016/content/player/277916.html) is '277916'):
-
-```python
->>> from espncricinfo.player import Player
->>> p = Player('277916')
->>> p.name
-'Ajinkya Rahane'
-```
-
-A full list of methods available to an instance of the `Player` class is in [the code](https://github.com/dwillis/python-espncricinfo/blob/master/espncricinfo/player.py).
-
-For series (or league) details, pass in the series ID (found in a match URL, for example, [India's 2018 tour of England](http://www.espncricinfo.com/series/18018/game/1119549/england-vs-india-1st-test-ind-in-eng-2018) is '18018'):
-
-```python
->>> from espncricinfo.series import Series
->>> s = Series('18018')
->>> s.name
-'India tour of Ireland and England 2018'
-```
-
-### Tests
-
-**Unit tests** (no network required — uses recorded fixtures):
-
-```shell
-uv run pytest tests/ -k "not integration"
-```
-
-**Integration tests** (hits live ESPN Cricinfo via Playwright):
-
-```shell
-uv run pytest tests/ --live
-```
-
-**Refreshing fixtures** (re-records fixtures from live site):
-
-```shell
-uv run python scripts/refresh_fixtures.py
-```
-
-Playwright and WebKit must be installed:
-
-```shell
-uv add --dev playwright
-uv run playwright install webkit
-```
-
-### Requirements
-
-Dependencies are managed via `pyproject.toml`. See the Installation section above.

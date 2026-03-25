@@ -139,30 +139,96 @@ def scrape_match(match_url):
         result["match_status"] = status_el.get_text(strip=True)
 
     # ── Teams & scores ────────────────────────────────────────────────────────
-    # Cricbuzz scorecard block
-    score_blocks = soup.select(".cb-lv-scrs-well")
-    team_els = soup.select(".cb-hmscg-tm-nm")
-    score_els = soup.select(".cb-hmscg-tm-scr")
-
-    # Try another selector
-    if not team_els:
-        team_els = soup.select(".cb-lv-scrs-well .cb-lv-tm-nm")
-    if not score_els:
-        score_els = soup.select(".cb-lv-scrs-well .cb-lv-scrs")
-
+    # Multi-strategy extraction to handle Cricbuzz HTML structure changes.
     teams_found = []
-    for i, t in enumerate(team_els[:2]):
-        name = t.get_text(strip=True)
-        score_text = score_els[i].get_text(strip=True) if i < len(score_els) else "---"
-        score, overs = parse_score_text(score_text)
-        teams_found.append({"name": name[:3].upper() if len(name) > 3 else name.upper(),
-                             "full_name": name, "score": score, "overs": overs,
-                             "flag_img": "", "playing11": []})
+
+    # --- Strategy 1a: .cb-scrd-hdr-rw blocks (scorecard header rows) ---
+    # Each row contains a team name span and a score span side-by-side.
+    for hdr in soup.select(".cb-scrd-hdr-rw")[:2]:
+        name_el  = (hdr.select_one(".cb-scrd-tm-nm") or
+                    hdr.select_one(".cb-lv-tm-nm")   or
+                    hdr.select_one("span"))
+        score_el = (hdr.select_one(".cb-scrd-scr")   or
+                    hdr.select_one(".cb-scrd-runs")   or
+                    hdr.select_one(".cb-lv-scrs"))
+        if name_el:
+            name = name_el.get_text(strip=True)
+            score_text = score_el.get_text(strip=True) if score_el else "---"
+            score, overs = parse_score_text(score_text)
+            teams_found.append({"name": name[:3].upper() if len(name) > 3 else name.upper(),
+                                 "full_name": name, "score": score, "overs": overs,
+                                 "flag_img": "", "playing11": []})
+
+    # --- Strategy 1b: .cb-lv-scrs-well blocks (live score wells) ---
+    if not teams_found:
+        for well in soup.select(".cb-lv-scrs-well")[:2]:
+            name_el  = (well.select_one(".cb-lv-tm-nm")    or
+                        well.select_one(".cb-hmscg-tm-nm")  or
+                        well.select_one(".cb-scrd-tm-nm"))
+            score_el = (well.select_one(".cb-lv-scrs")      or
+                        well.select_one(".cb-hmscg-tm-scr")  or
+                        well.select_one(".cb-scrd-scr"))
+            if name_el:
+                name = name_el.get_text(strip=True)
+                score_text = score_el.get_text(strip=True) if score_el else "---"
+                score, overs = parse_score_text(score_text)
+                teams_found.append({"name": name[:3].upper() if len(name) > 3 else name.upper(),
+                                     "full_name": name, "score": score, "overs": overs,
+                                     "flag_img": "", "playing11": []})
+
+    # --- Strategy 1c: flat selectors for team names + scores independently ---
+    if not teams_found:
+        team_els  = (soup.select(".cb-hmscg-tm-nm")  or
+                     soup.select(".cb-lv-tm-nm")      or
+                     soup.select(".cb-scrd-tm-nm")    or
+                     soup.select(".cb-team-name"))
+        score_els = (soup.select(".cb-hmscg-tm-scr") or
+                     soup.select(".cb-lv-scrs")       or
+                     soup.select(".cb-scrd-scr")      or
+                     soup.select(".cb-scrd-runs"))
+        for i, t in enumerate(team_els[:2]):
+            name = t.get_text(strip=True)
+            score_text = score_els[i].get_text(strip=True) if i < len(score_els) else "---"
+            score, overs = parse_score_text(score_text)
+            teams_found.append({"name": name[:3].upper() if len(name) > 3 else name.upper(),
+                                 "full_name": name, "score": score, "overs": overs,
+                                 "flag_img": "", "playing11": []})
+
+    # --- Strategy 2: parse the page <title> "TeamA vs TeamB, ..." as last resort ---
+    if not teams_found:
+        title_txt = soup.find("title")
+        title_txt = title_txt.get_text(strip=True) if title_txt else ""
+        vs_match = re.search(
+            r'([A-Za-z\s\(\)]+?)\s+vs\.?\s+([A-Za-z\s\(\)]+?)(?:,|\u2013|-|Live|Score)',
+            title_txt, re.IGNORECASE
+        )
+        if vs_match:
+            for raw in (vs_match.group(1).strip(), vs_match.group(2).strip()):
+                teams_found.append({"name": raw[:3].upper() if len(raw) > 3 else raw.upper(),
+                                     "full_name": raw, "score": "---", "overs": "",
+                                     "flag_img": "", "playing11": []})
+
+    # --- Strategy 3: look for "X vs Y" text node anywhere on the page ---
+    if not teams_found:
+        vs_node = soup.find(string=re.compile(r'\bvs\.?\b', re.I))
+        if vs_node:
+            vs_match = re.search(r'([A-Za-z ]+?)\s+vs\.?\s+([A-Za-z ]+)',
+                                 str(vs_node), re.I)
+            if vs_match:
+                for raw in (vs_match.group(1).strip(), vs_match.group(2).strip()):
+                    if raw:
+                        teams_found.append({"name": raw[:3].upper() if len(raw) > 3 else raw.upper(),
+                                             "full_name": raw, "score": "---", "overs": "",
+                                             "flag_img": "", "playing11": []})
+
+    log.info(f"Teams found ({len(teams_found)}): "
+             f"{[t['full_name'] for t in teams_found]}")
 
     if len(teams_found) >= 1:
         result["team1"] = teams_found[0]
     if len(teams_found) >= 2:
         result["team2"] = teams_found[1]
+
 
     # ── CRR / RRR ─────────────────────────────────────────────────────────────
     crr_el = soup.find(string=re.compile(r'CRR\s*:', re.I))

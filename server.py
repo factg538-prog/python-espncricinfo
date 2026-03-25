@@ -3,6 +3,7 @@ Sports Adda67 — Live Cricket Overlay Server
 Scrapes Cricbuzz for live data — no API key needed, unlimited & free.
 """
 
+import sys
 import os
 import json
 import time
@@ -14,7 +15,15 @@ from flask import Flask, jsonify, send_from_directory, Response, request
 import requests
 from bs4 import BeautifulSoup
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+# Force unbuffered output so background-thread logs appear immediately in
+# deployment log streams (stdout is line-buffered by default in Python).
+sys.stdout = sys.stderr
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+    stream=sys.stderr,
+)
 log = logging.getLogger("overlay")
 
 app = Flask(__name__, static_folder="static")
@@ -392,8 +401,9 @@ def background_poll():
         try:
             do_poll()
         except Exception as e:
-            log.error(f"Poll error: {e}")
+            log.exception(f"Poll error: {e}")
         time.sleep(POLL_SEC)
+
 
 
 # ─── ROUTES ───────────────────────────────────────────────────────────────────
@@ -451,4 +461,5 @@ if __name__ == "__main__":
         log.warning(f"Initial poll failed: {e}")
     t = threading.Thread(target=background_poll, daemon=True)
     t.start()
+    log.info(f"Background polling thread started (interval={POLL_SEC}s)")
     app.run(host="0.0.0.0", port=PORT, debug=False)
